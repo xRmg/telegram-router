@@ -1,0 +1,44 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--notify-keyspace-events", "Ex"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  proxy:
+    build: .
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  home-automation:
+    build: .
+    command: ["python", "examples/home_automation.py"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["demo"]
+
+  time-service:
+    build: .
+    command: ["python", "examples/time_service.py"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["demo"]
+
+volumes:
+  redis-data:

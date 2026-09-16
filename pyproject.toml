@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "telegram-proxy"
+version = "0.1.0"
+description = "Telegram command proxy and router for a home service stack"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.15",
+    "openai>=1.50",
+    "pydantic>=2.9",
+    "redis>=5.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "fakeredis>=2.26",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[project.scripts]
+telegram-proxy = "telegram_proxy.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/telegram_proxy", "src/telegram_proxy_client"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

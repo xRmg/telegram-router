@@ -1,16 +1,12 @@
 """Tests for the learn-owner-mode token + Redis-persistence feature."""
 from __future__ import annotations
 
-import fakeredis.aioredis
-import pytest
-
 from telegram_proxy.bot import ProxyBot
 from telegram_proxy.keys import OWNER_CHAT_ID_KEY
 from telegram_proxy.ratelimit import FixedWindowLimiter
 from telegram_proxy.registry import CapabilityRegistry
 from telegram_proxy.router import Router
 from tests.helpers import FakeLLM, FakeNotifier, make_config
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -67,6 +63,8 @@ async def test_correct_token_persists_chat_id_and_replies(redis):
     # Does NOT instruct user to restart as a required step
     assert "now active" in notifier.sent[0][0]
     assert "TELEGRAM_OWNER_CHAT_ID" in notifier.sent[0][0]
+    assert "Redis-independent override" in notifier.sent[0][0]
+    assert "permanent across full restarts" not in notifier.sent[0][0]
 
 
 async def test_bot_activates_immediately_after_token(redis):

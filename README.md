@@ -6,14 +6,22 @@ themselves, and a user reaches them through explicit commands or free text.
 
 ## Quick start
 
+Create a Telegram bot with [@BotFather](https://t.me/BotFather), run `/newbot`,
+and copy the API token it returns.
+
 ```bash
 cp .env.example .env
 # fill in TELEGRAM_BOT_TOKEN, then start:
 docker compose --profile demo up --build
 ```
 
-Leave `TELEGRAM_OWNER_CHAT_ID` empty on first run. Message the bot once — it
-replies with your chat id — then set it in `.env` and restart the proxy:
+Leave `TELEGRAM_OWNER_CHAT_ID` empty on first run. The proxy starts in
+learn-owner mode and prints a one-time token in logs/stdout. Send that exact
+token to your bot in Telegram; it replies with your chat id, stores it in
+Redis, and becomes active immediately (no restart needed).
+
+Optionally set `TELEGRAM_OWNER_CHAT_ID` in `.env` to that value for a permanent
+owner outside Redis persistence:
 
 ```bash
 docker compose up -d proxy

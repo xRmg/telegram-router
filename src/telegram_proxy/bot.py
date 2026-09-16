@@ -21,7 +21,7 @@ from aiogram.types import (
 from .commands import parse_explicit
 from .config import RESERVED_PREFIXES, Config
 from .help_text import build_general_help, build_service_help
-from .keys import LAST_UPDATE_ID_KEY
+from .keys import LAST_UPDATE_ID_KEY, OWNER_CHAT_ID_KEY
 from .registry import CapabilityRegistry, resolve_display_name
 from .router import Router
 
@@ -105,9 +105,15 @@ class ProxyBot:
         self._notifier = notifier
         self._redis = redis
         self._logger = logger or logging.getLogger(__name__)
+        # Mutable owner: starts from config, updated in-place after learning.
+        self._owner_chat_id: int | None = config.telegram_owner_chat_id
         self._dispatcher = Dispatcher()
         self._dispatcher.message.register(self._handle_message)
         self._dispatcher.callback_query.register(self._handle_callback)
+
+    @property
+    def _in_learn_mode(self) -> bool:
+        return self._owner_chat_id is None
 
     async def run(self) -> None:
         await self._bot.delete_webhook()
@@ -147,14 +153,10 @@ class ProxyBot:
             return None
 
     async def _handle_message(self, message: Message) -> None:
-        if self._config.learn_owner_mode:
-            self._notifier.chat_id = message.chat.id
-            self._logger.info("owner_chat_learned", extra={"chat_id": message.chat.id})
-            await self._notifier.send(
-                f"Your chat id is {message.chat.id}. Set TELEGRAM_OWNER_CHAT_ID to this value."
-            )
+        if self._in_learn_mode:
+            await self._handle_learn_mode(message)
             return
-        if message.chat.id != self._config.telegram_owner_chat_id:
+        if message.chat.id != self._owner_chat_id:
             self._logger.warning("message_ignored", extra={"chat_id": message.chat.id})
             return
         text = (message.text or "").strip()
@@ -169,18 +171,37 @@ class ProxyBot:
             return
         await self._router.handle_text(text)
 
+    async def _handle_learn_mode(self, message: Message) -> None:
+        text = (message.text or "").strip()
+        token = self._config.learn_token
+        if token and text != token:
+            self._logger.warning(
+                "learn_mode_wrong_token", extra={"chat_id": message.chat.id}
+            )
+            return
+        chat_id = message.chat.id
+        await self._redis.set(OWNER_CHAT_ID_KEY, chat_id)
+        # Activate immediately — no restart required.
+        self._owner_chat_id = chat_id
+        self._notifier.chat_id = chat_id
+        self._logger.info("owner_chat_learned", extra={"chat_id": chat_id})
+        await self._notifier.send(
+            f"Owner chat registered (id={chat_id}). "
+            f"The bot is now active. Optionally set TELEGRAM_OWNER_CHAT_ID={chat_id} "
+            f"to make this permanent across full restarts."
+        )
+
     async def _handle_callback(self, callback: CallbackQuery) -> None:
         message = callback.message
         if message is None:
             await self._notifier.answer_callback(callback.id)
             return
-        if (
-            not self._config.learn_owner_mode
-            and message.chat.id != self._config.telegram_owner_chat_id
-        ):
+        if self._in_learn_mode:
             await self._notifier.answer_callback(callback.id)
             return
-        self._notifier.chat_id = message.chat.id
+        if message.chat.id != self._owner_chat_id:
+            await self._notifier.answer_callback(callback.id)
+            return
         parts = (callback.data or "").split(":", 2)
         if len(parts) != 3 or parts[0] != "confirm":
             await self._notifier.answer_callback(callback.id)

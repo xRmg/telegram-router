@@ -27,6 +27,7 @@ class ConfigError(ValueError):
 class Config:
     telegram_bot_token: str
     telegram_owner_chat_id: int | None = None
+    learn_token: str = ""
     llm_api_key: str = ""
     redis_url: str = DEFAULT_REDIS_URL
     llm_base_url: str = DEFAULT_LLM_BASE_URL

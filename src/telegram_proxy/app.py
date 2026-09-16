@@ -33,12 +33,13 @@ async def run(config: Config) -> None:
                 owner_chat_id = int(raw)
                 logger.info("owner_chat_id_loaded_from_redis", extra={"chat_id": owner_chat_id})
             except (TypeError, ValueError):
-                pass
+                logger.warning("owner_chat_id_invalid_in_redis")
+                await redis.delete(OWNER_CHAT_ID_KEY)
 
     learn_token = ""
     if owner_chat_id is None:
         learn_token = secrets.token_hex(4)
-        logger.info("learn_owner_mode_active", extra={"learn_token": learn_token})
+        logger.info("learn_owner_mode_active")
         print(
             f"[telegram-proxy] Learn-owner mode: send the token  {learn_token}  "
             "to this bot to register as the owner.",

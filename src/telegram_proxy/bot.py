@@ -188,7 +188,7 @@ class ProxyBot:
         await self._notifier.send(
             f"Owner chat registered (id={chat_id}). "
             f"The bot is now active. Optionally set TELEGRAM_OWNER_CHAT_ID={chat_id} "
-            f"to make this permanent across full restarts."
+            "as a Redis-independent override if you need to recover after Redis is wiped."
         )
 
     async def _handle_callback(self, callback: CallbackQuery) -> None:

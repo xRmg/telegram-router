@@ -20,8 +20,10 @@ learn-owner mode and prints a one-time token in logs/stdout. Send that exact
 token to your bot in Telegram; it replies with your chat id, stores it in
 Redis, and becomes active immediately (no restart needed).
 
-Optionally set `TELEGRAM_OWNER_CHAT_ID` in `.env` to that value for a permanent
-owner outside Redis persistence:
+If your Redis data persists, this learned owner is reused on restart (no
+re-pairing). Set `TELEGRAM_OWNER_CHAT_ID` in `.env` when you want to bind the
+bot to an existing owner chat without learn mode, or when you need startup to
+work after Redis is reset/new:
 
 ```bash
 docker compose up -d proxy

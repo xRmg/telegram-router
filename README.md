@@ -124,7 +124,7 @@ For a small Python service like this, prefer a trunk-based workflow over GitFlow
 
 - Create short-lived feature branches from `main`.
 - Require pull requests before merging to `main`.
-- Require the `CI`, `Dependency Review`, and `CodeQL` checks to pass.
+- Require the `CI / Lint, test, and package`, `CI / Build container image`, `Dependency Review`, and `CodeQL` checks to pass.
 - Require at least one approving review and enable dismissal of stale approvals after new commits.
 - Require branches to be up to date before merge if you want stricter protection against hidden breakage.
 - Block force pushes and branch deletion on `main`.

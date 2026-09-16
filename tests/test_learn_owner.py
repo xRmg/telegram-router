@@ -64,7 +64,41 @@ async def test_correct_token_persists_chat_id_and_replies(redis):
     # Notifier received the confirmation message
     assert len(notifier.sent) == 1
     assert "777" in notifier.sent[0][0]
+    # Does NOT instruct user to restart as a required step
+    assert "now active" in notifier.sent[0][0]
     assert "TELEGRAM_OWNER_CHAT_ID" in notifier.sent[0][0]
+
+
+async def test_bot_activates_immediately_after_token(redis):
+    """After learning, the bot accepts messages from the new owner without restart."""
+    notifier = FakeNotifier()
+    config = make_config(telegram_owner_chat_id=None, learn_token="abc123")
+    bot = _make_bot(config, redis, notifier)
+
+    await bot._handle_message(_FakeMessage(chat_id=777, text="abc123"))
+    assert bot._in_learn_mode is False
+    assert bot._owner_chat_id == 777
+
+    # A subsequent message from the same chat should be processed normally
+    # (not enter learn mode again, and not be ignored)
+    await bot._handle_message(_FakeMessage(chat_id=777, text="/help"))
+    # /help is a reserved prefix — bot sends a help reply, not a "wrong token" ignore
+    assert len(notifier.sent) == 2
+
+
+async def test_second_token_message_ignored_after_activation(redis):
+    """Once activated, further token messages from different users are rejected."""
+    notifier = FakeNotifier()
+    config = make_config(telegram_owner_chat_id=None, learn_token="abc123")
+    bot = _make_bot(config, redis, notifier)
+
+    await bot._handle_message(_FakeMessage(chat_id=777, text="abc123"))
+    assert bot._owner_chat_id == 777
+
+    # Another user tries to send the token — should be silently ignored
+    await bot._handle_message(_FakeMessage(chat_id=888, text="abc123"))
+    assert bot._owner_chat_id == 777  # unchanged
+    assert len(notifier.sent) == 1  # only the original confirmation
 
 
 async def test_wrong_token_is_silently_rejected(redis):

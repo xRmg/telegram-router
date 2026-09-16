@@ -100,9 +100,33 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
 .venv/bin/ruff check src tests examples
+.venv/bin/python -m build
 ```
 
 ## Testing
 
 - `docker compose up -d` — proxy + Redis only.
 - `docker compose --profile demo up -d --build` — proxy + Redis + demo clients.
+
+## GitHub automation
+
+Recommended automation for this repository is now scaffolded under `.github/workflows/`:
+
+- `ci.yml` runs Ruff, pytest, a package build, and a Docker image build for every pull request plus pushes to `main`.
+- `dependency-review.yml` blocks risky dependency changes in pull requests using GitHub's dependency review action.
+- `codeql.yml` runs GitHub CodeQL on pull requests, pushes to `main`, and on a weekly schedule.
+
+This set covers the highest-value checks for the current codebase: Python quality, test regressions, packaging drift, container build breakage, and common security issues. Additional automation only becomes worthwhile once releases, deployments, or broader integration tests exist.
+
+## Recommended branch protection and workflow
+
+For a small Python service like this, prefer a trunk-based workflow over GitFlow:
+
+- Create short-lived feature branches from `main`.
+- Require pull requests before merging to `main`.
+- Require the `CI / Lint, test, and package`, `CI / Build container image`, `Dependency Review`, and `CodeQL` checks to pass.
+- Require at least one approving review and enable dismissal of stale approvals after new commits.
+- Require branches to be up to date before merge if you want stricter protection against hidden breakage.
+- Block force pushes and branch deletion on `main`.
+
+GitFlow is only worth the extra process if you plan to maintain multiple supported release branches at the same time. For the current repository shape, trunk-based development is simpler and gives faster feedback with less branch-management overhead.

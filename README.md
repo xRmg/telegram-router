@@ -4,8 +4,6 @@ One dockerized service that holds the only connection to a Telegram bot. Client
 services register their commands with the proxy instead of talking to Telegram
 themselves, and a user reaches them through explicit commands or free text.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design.
-
 ## Quick start
 
 ```bash

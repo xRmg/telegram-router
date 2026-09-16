@@ -21,7 +21,7 @@ from aiogram.types import (
 from .commands import parse_explicit
 from .config import RESERVED_PREFIXES, Config
 from .help_text import build_general_help, build_service_help
-from .keys import LAST_UPDATE_ID_KEY
+from .keys import LAST_UPDATE_ID_KEY, OWNER_CHAT_ID_KEY
 from .registry import CapabilityRegistry, resolve_display_name
 from .router import Router
 
@@ -148,11 +148,7 @@ class ProxyBot:
 
     async def _handle_message(self, message: Message) -> None:
         if self._config.learn_owner_mode:
-            self._notifier.chat_id = message.chat.id
-            self._logger.info("owner_chat_learned", extra={"chat_id": message.chat.id})
-            await self._notifier.send(
-                f"Your chat id is {message.chat.id}. Set TELEGRAM_OWNER_CHAT_ID to this value."
-            )
+            await self._handle_learn_mode(message)
             return
         if message.chat.id != self._config.telegram_owner_chat_id:
             self._logger.warning("message_ignored", extra={"chat_id": message.chat.id})
@@ -169,18 +165,34 @@ class ProxyBot:
             return
         await self._router.handle_text(text)
 
+    async def _handle_learn_mode(self, message: Message) -> None:
+        text = (message.text or "").strip()
+        token = self._config.learn_token
+        if token and text != token:
+            self._logger.warning(
+                "learn_mode_wrong_token", extra={"chat_id": message.chat.id}
+            )
+            return
+        chat_id = message.chat.id
+        await self._redis.set(OWNER_CHAT_ID_KEY, chat_id)
+        self._notifier.chat_id = chat_id
+        self._logger.info("owner_chat_learned", extra={"chat_id": chat_id})
+        await self._notifier.send(
+            f"Owner chat learned (id={chat_id}). "
+            f"Set TELEGRAM_OWNER_CHAT_ID={chat_id} and restart."
+        )
+
     async def _handle_callback(self, callback: CallbackQuery) -> None:
         message = callback.message
         if message is None:
             await self._notifier.answer_callback(callback.id)
             return
-        if (
-            not self._config.learn_owner_mode
-            and message.chat.id != self._config.telegram_owner_chat_id
-        ):
+        if self._config.learn_owner_mode:
             await self._notifier.answer_callback(callback.id)
             return
-        self._notifier.chat_id = message.chat.id
+        if message.chat.id != self._config.telegram_owner_chat_id:
+            await self._notifier.answer_callback(callback.id)
+            return
         parts = (callback.data or "").split(":", 2)
         if len(parts) != 3 or parts[0] != "confirm":
             await self._notifier.answer_callback(callback.id)

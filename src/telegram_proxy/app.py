@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import sys
 
 from aiogram import Bot
@@ -9,6 +10,7 @@ from redis.asyncio import Redis
 
 from .bot import ProxyBot, TelegramNotifier
 from .config import Config, ConfigError
+from .keys import OWNER_CHAT_ID_KEY
 from .llm import ToolRouter
 from .logging_setup import setup_logging
 from .outgoing import OutgoingRelay
@@ -20,6 +22,61 @@ from .router import Router
 async def run(config: Config) -> None:
     logger = logging.getLogger("telegram_proxy")
     redis = Redis.from_url(config.redis_url, decode_responses=True)
+
+    # Resolve the owner chat id: env var wins; fall back to Redis-persisted value.
+    owner_chat_id = config.telegram_owner_chat_id
+    if owner_chat_id is None:
+        raw = await redis.get(OWNER_CHAT_ID_KEY)
+        if raw is not None:
+            try:
+                owner_chat_id = int(raw)
+                logger.info("owner_chat_id_loaded_from_redis", extra={"chat_id": owner_chat_id})
+            except (TypeError, ValueError):
+                pass
+
+    # Rebuild config with the resolved chat id (and a fresh learn token if still unknown).
+    learn_token = ""
+    if owner_chat_id is None:
+        learn_token = secrets.token_hex(4)
+        logger.info(
+            "learn_owner_mode_active",
+            extra={"learn_token": learn_token},
+        )
+        print(
+            f"[telegram-proxy] Learn-owner mode: send the token  {learn_token}  "
+            "to this bot to register as the owner.",
+            flush=True,
+        )
+        config = Config(
+            telegram_bot_token=config.telegram_bot_token,
+            telegram_owner_chat_id=None,
+            learn_token=learn_token,
+            llm_api_key=config.llm_api_key,
+            redis_url=config.redis_url,
+            llm_base_url=config.llm_base_url,
+            llm_model=config.llm_model,
+            routing_confidence_threshold=config.routing_confidence_threshold,
+            reply_timeout_seconds=config.reply_timeout_seconds,
+            llm_rate_limit_per_minute=config.llm_rate_limit_per_minute,
+            notifier_rate_limit_per_minute=config.notifier_rate_limit_per_minute,
+            service_display_names=config.service_display_names,
+        )
+    else:
+        config = Config(
+            telegram_bot_token=config.telegram_bot_token,
+            telegram_owner_chat_id=owner_chat_id,
+            learn_token="",
+            llm_api_key=config.llm_api_key,
+            redis_url=config.redis_url,
+            llm_base_url=config.llm_base_url,
+            llm_model=config.llm_model,
+            routing_confidence_threshold=config.routing_confidence_threshold,
+            reply_timeout_seconds=config.reply_timeout_seconds,
+            llm_rate_limit_per_minute=config.llm_rate_limit_per_minute,
+            notifier_rate_limit_per_minute=config.notifier_rate_limit_per_minute,
+            service_display_names=config.service_display_names,
+        )
+
     bot = Bot(config.telegram_bot_token)
     registry = CapabilityRegistry(redis, db_index=config.redis_db_index, logger=logger)
     notifier = TelegramNotifier(bot, config.telegram_owner_chat_id, logger=logger)

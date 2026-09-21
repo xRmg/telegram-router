@@ -175,9 +175,7 @@ class ProxyBot:
         text = (message.text or "").strip()
         token = self._config.learn_token
         if token and text != token:
-            self._logger.warning(
-                "learn_mode_wrong_token", extra={"chat_id": message.chat.id}
-            )
+            self._logger.warning("learn_mode_wrong_token", extra={"chat_id": message.chat.id})
             return
         chat_id = message.chat.id
         await self._redis.set(OWNER_CHAT_ID_KEY, chat_id)

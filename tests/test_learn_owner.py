@@ -1,4 +1,5 @@
 """Tests for the learn-owner-mode token + Redis-persistence feature."""
+
 from __future__ import annotations
 
 from telegram_proxy.bot import ProxyBot
@@ -16,8 +17,9 @@ from tests.helpers import FakeLLM, FakeNotifier, make_config
 def _make_bot(config, redis, notifier):
     registry = CapabilityRegistry(redis)
     router = Router(redis, registry, config, notifier, FakeLLM(), FixedWindowLimiter(redis))
-    return ProxyBot(bot=None, config=config, router=router, registry=registry,
-                    notifier=notifier, redis=redis)
+    return ProxyBot(
+        bot=None, config=config, router=router, registry=registry, notifier=notifier, redis=redis
+    )
 
 
 class _FakeMessage:

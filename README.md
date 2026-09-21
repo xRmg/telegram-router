@@ -43,6 +43,50 @@ The proxy is the only connection to Telegram. Client services register their
 capabilities in Redis and receive commands over pub/sub; every reply and
 unsolicited push flows back through the proxy to the single owner chat.
 
+### Message flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant T as Telegram bot
+    participant P as Proxy
+    participant R as Redis
+    participant S as Client service
+
+    Note over S: startup
+    S->>R: SET capabilities:&lt;id&gt; (TTL 90s)
+    S->>R: PUBLISH capabilities:changed
+    loop every 30s
+        S->>R: heartbeat: refresh capability key
+    end
+
+    U->>T: /time now
+    T->>P: message via long polling
+    P->>R: service live? (capabilities:&lt;id&gt;)
+    R-->>P: yes
+    P->>R: PUBLISH cmd:&lt;id&gt; {request_id, command, params}
+    R-->>S: deliver command
+    S->>R: PUBLISH telegram:outgoing {reply}
+    R-->>P: deliver reply
+    P->>T: send reply (prefixed, owner chat)
+    T-->>U: Time: 2026-09-21 10:00:00
+
+    U->>T: "turn on the lights" (free text)
+    T->>P: message via long polling
+    P->>P: LLM tool call + confidence
+    alt confidence >= threshold
+        P->>R: check live, then PUBLISH cmd:&lt;id&gt;
+    else below threshold
+        P->>T: "not sure what you mean"
+    end
+
+    Note over S: unsolicited push
+    S->>R: PUBLISH telegram:outgoing (no request_id, level)
+    R-->>P: deliver push
+    P->>T: send push (rate-limited per service)
+    T-->>U: Sniper: order filled
+```
+
 ## Quick start
 
 Create a Telegram bot with [@BotFather](https://t.me/BotFather), run `/newbot`,
@@ -144,23 +188,19 @@ capabilities drop out of the router's cache.
 
 ## Redis security
 
-Redis runs with ACLs. By default nothing is enforced (dev mode); to enable
-authentication, set `REDIS_PASSWORD` in `.env` and give every client service
-its own password:
+Redis is protected by a single shared password. By default nothing is
+enforced (dev mode); to enable authentication, set `REDIS_PASSWORD` in `.env`
+and restart:
 
-| Variable | User | Access |
-|---|---|---|
-| `REDIS_PASSWORD` | `proxy` | all capability/pending/ratelimit keys, all channels, subscribe/publish |
-| `REDIS_USER_TIME_PASSWORD` | `time` | own capability key, `cmd:time`, publish to `telegram:outgoing` |
-| `REDIS_USER_HOME_AUTOMATION_PASSWORD` | `home_automation` | own capability key, `cmd:home-automation`, publish to `telegram:outgoing` |
+```bash
+docker compose --profile demo up -d
+```
 
-With `REDIS_PASSWORD` set, the `default` user is disabled, each service is
-limited to its own keys and channels, and the proxy cannot be used to reach
-another service's `cmd:` channel. The proxy embeds `REDIS_PASSWORD` into its
-connection automatically; client services use their user in the Redis URL
-(e.g. `redis://time:password@redis:6379/0`), which the compose file already
-builds from the variables above.
+With `REDIS_PASSWORD` set, every connection — proxy and client services —
+must authenticate with it, and unauthenticated access (e.g. `redis-cli ping`
+without a password) is rejected. The proxy embeds the password into its
+connection automatically; client services pick it up from the
+`REDIS_PASSWORD` environment variable passed through by the compose file.
 
-Adding a new client service: declare `REDIS_USER_<NAME>_PASSWORD` and, if the
-service id differs from the user name, `REDIS_USER_<NAME>_ID=<service_id>`;
-then use `redis://<name>:<password>@redis:6379/0` in its `REDIS_URL`.
+Per-service isolation (each service limited to its own keys and channels) is
+planned; for now all services share one credential.

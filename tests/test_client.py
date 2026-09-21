@@ -141,3 +141,25 @@ async def test_push_publishes_without_request_id(redis):
         "text": "Order filled",
         "level": "warning",
     }
+
+
+async def test_sdk_injects_redis_password(redis, monkeypatch):
+    monkeypatch.setenv("REDIS_PASSWORD", "pw123")
+    client = ServiceClient(service_id="x", prefix="x", redis_url="redis://redis:6379/0")
+    try:
+        kwargs = client._redis.connection_pool.connection_kwargs
+        assert kwargs["password"] == "pw123"
+        assert kwargs.get("username") is None
+    finally:
+        await client._redis.aclose()
+
+
+async def test_sdk_keeps_explicit_credentials(monkeypatch):
+    monkeypatch.setenv("REDIS_PASSWORD", "pw123")
+    client = ServiceClient(service_id="x", prefix="x", redis_url="redis://other:pass@redis:6379/0")
+    try:
+        kwargs = client._redis.connection_pool.connection_kwargs
+        assert kwargs["username"] == "other"
+        assert kwargs["password"] == "pass"
+    finally:
+        await client._redis.aclose()

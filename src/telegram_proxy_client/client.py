@@ -4,13 +4,19 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from redis.asyncio import Redis
 
-from telegram_proxy.config import CAPABILITY_TTL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, SCHEMA_VERSION
+from telegram_proxy.config import (
+    CAPABILITY_TTL_SECONDS,
+    HEARTBEAT_INTERVAL_SECONDS,
+    SCHEMA_VERSION,
+    inject_redis_password,
+)
 from telegram_proxy.keys import (
     CAPABILITIES_CHANGED_CHANNEL,
     OUTGOING_CHANNEL,
@@ -50,7 +56,10 @@ class ServiceClient:
     ) -> None:
         if redis is None and redis_url is None:
             raise ValueError("redis_url or redis is required")
-        self._redis = redis or Redis.from_url(redis_url, decode_responses=True)
+        self._redis = redis or Redis.from_url(
+            inject_redis_password(redis_url, os.environ.get("REDIS_PASSWORD", "")),
+            decode_responses=True,
+        )
         self._service_id = service_id
         self._prefix = prefix
         self._display_name = display_name

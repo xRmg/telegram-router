@@ -44,10 +44,7 @@ class Config:
         source = env if env is not None else os.environ
         redis_url = _optional(source, "REDIS_URL", DEFAULT_REDIS_URL)
         redis_password = _optional(source, "REDIS_PASSWORD", "")
-        if redis_password and "@" not in redis_url:
-            parsed = urlparse(redis_url)
-            netloc = f"proxy:{quote(redis_password, safe='')}@{parsed.netloc}"
-            redis_url = parsed._replace(netloc=netloc).geturl()
+        redis_url = inject_redis_password(redis_url, redis_password)
         return cls(
             telegram_bot_token=_required(source, "TELEGRAM_BOT_TOKEN"),
             telegram_owner_chat_id=_optional_int(source, "TELEGRAM_OWNER_CHAT_ID", None),
@@ -88,6 +85,14 @@ class Config:
             return int(path.split("/", 1)[0])
         except ValueError:
             return 0
+
+
+def inject_redis_password(redis_url: str, redis_password: str) -> str:
+    if not redis_password or "@" in redis_url:
+        return redis_url
+    parsed = urlparse(redis_url)
+    netloc = f":{quote(redis_password, safe='')}@{parsed.netloc}"
+    return parsed._replace(netloc=netloc).geturl()
 
 
 def _required(env: Mapping[str, str], key: str) -> str:

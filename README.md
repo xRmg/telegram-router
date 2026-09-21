@@ -39,9 +39,35 @@ flowchart TD
     PEND --> B
 ```
 
-The proxy is the only connection to Telegram. Client services register their
-capabilities in Redis and receive commands over pub/sub; every reply and
-unsolicited push flows back through the proxy to the single owner chat.
+### Topology
+
+```mermaid
+flowchart TB
+    subgraph TG["Telegram cloud"]
+        API["Telegram Bot API"]
+    end
+
+    API <-->|"HTTPS long polling"| PROXY["Proxy / router"]
+
+    subgraph STACK["Docker compose stack"]
+        PROXY
+        REDIS[(Redis)]
+        LLM["LLM provider (optional)"] -.->|"OpenAI-compatible API"| PROXY
+
+        PROXY <-->|"capabilities, commands, replies"| REDIS
+
+        subgraph SERVICES["Client services"]
+            TIME["time-service<br/>cmd:time"]
+            HA["home-automation<br/>cmd:home-automation"]
+            MORE["more services<br/>cmd:&lt;service_id&gt;"]
+        end
+
+        REDIS <--> SERVICES
+    end
+```
+
+The proxy is the only service that talks to Telegram; every client service
+reaches the user exclusively through Redis and the proxy.
 
 ### Message flow
 

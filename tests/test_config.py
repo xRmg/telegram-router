@@ -87,3 +87,24 @@ def test_db_index():
     assert Config.from_env(BASE).redis_db_index == 0
     assert Config.from_env({**BASE, "REDIS_URL": "redis://redis:6379/3"}).redis_db_index == 3
     assert Config.from_env({**BASE, "REDIS_URL": "redis://redis:6379"}).redis_db_index == 0
+
+
+def test_redis_password_injects_proxy_credentials():
+    config = Config.from_env({**BASE, "REDIS_PASSWORD": "s3cr3t"})
+    assert config.redis_url == "redis://proxy:s3cr3t@redis:6379/0"
+
+
+def test_redis_password_is_quoted():
+    config = Config.from_env({**BASE, "REDIS_PASSWORD": "p@ss:w0rd"})
+    assert config.redis_url == "redis://proxy:p%40ss%3Aw0rd@redis:6379/0"
+
+
+def test_redis_url_with_existing_auth_untouched():
+    config = Config.from_env(
+        {**BASE, "REDIS_PASSWORD": "x", "REDIS_URL": "redis://user:old@h:6379/0"}
+    )
+    assert config.redis_url == "redis://user:old@h:6379/0"
+
+
+def test_no_redis_password_keeps_url():
+    assert Config.from_env(BASE).redis_url == "redis://redis:6379/0"

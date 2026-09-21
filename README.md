@@ -103,6 +103,29 @@ See `.env.example` for every variable. Notable: Redis must run with
 `notify-keyspace-events Ex` (the compose file already does) so expired
 capabilities drop out of the router's cache.
 
+## Redis security
+
+Redis runs with ACLs. By default nothing is enforced (dev mode); to enable
+authentication, set `REDIS_PASSWORD` in `.env` and give every client service
+its own password:
+
+| Variable | User | Access |
+|---|---|---|
+| `REDIS_PASSWORD` | `proxy` | all capability/pending/ratelimit keys, all channels, subscribe/publish |
+| `REDIS_USER_TIME_PASSWORD` | `time` | own capability key, `cmd:time`, publish to `telegram:outgoing` |
+| `REDIS_USER_HOME_AUTOMATION_PASSWORD` | `home_automation` | own capability key, `cmd:home-automation`, publish to `telegram:outgoing` |
+
+With `REDIS_PASSWORD` set, the `default` user is disabled, each service is
+limited to its own keys and channels, and the proxy cannot be used to reach
+another service's `cmd:` channel. The proxy embeds `REDIS_PASSWORD` into its
+connection automatically; client services use their user in the Redis URL
+(e.g. `redis://time:password@redis:6379/0`), which the compose file already
+builds from the variables above.
+
+Adding a new client service: declare `REDIS_USER_<NAME>_PASSWORD` and, if the
+service id differs from the user name, `REDIS_USER_<NAME>_ID=<service_id>`;
+then use `redis://<name>:<password>@redis:6379/0` in its `REDIS_URL`.
+
 ## Development
 
 ```bash

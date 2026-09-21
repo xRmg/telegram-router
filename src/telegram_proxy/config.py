@@ -4,7 +4,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 SCHEMA_VERSION = 1
 CAPABILITY_TTL_SECONDS = 90
@@ -30,6 +30,7 @@ class Config:
     learn_token: str = ""
     llm_api_key: str = ""
     redis_url: str = DEFAULT_REDIS_URL
+    redis_password: str = ""
     llm_base_url: str = DEFAULT_LLM_BASE_URL
     llm_model: str = DEFAULT_LLM_MODEL
     routing_confidence_threshold: float = 0.6
@@ -41,11 +42,18 @@ class Config:
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
         source = env if env is not None else os.environ
+        redis_url = _optional(source, "REDIS_URL", DEFAULT_REDIS_URL)
+        redis_password = _optional(source, "REDIS_PASSWORD", "")
+        if redis_password and "@" not in redis_url:
+            parsed = urlparse(redis_url)
+            netloc = f"proxy:{quote(redis_password, safe='')}@{parsed.netloc}"
+            redis_url = parsed._replace(netloc=netloc).geturl()
         return cls(
             telegram_bot_token=_required(source, "TELEGRAM_BOT_TOKEN"),
             telegram_owner_chat_id=_optional_int(source, "TELEGRAM_OWNER_CHAT_ID", None),
             llm_api_key=_optional(source, "LLM_API_KEY", ""),
-            redis_url=_optional(source, "REDIS_URL", DEFAULT_REDIS_URL),
+            redis_url=redis_url,
+            redis_password=redis_password,
             llm_base_url=_optional(source, "LLM_BASE_URL", DEFAULT_LLM_BASE_URL),
             llm_model=_optional(source, "LLM_MODEL", DEFAULT_LLM_MODEL),
             routing_confidence_threshold=_optional_float(

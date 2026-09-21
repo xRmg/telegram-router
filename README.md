@@ -4,6 +4,45 @@ One dockerized service that holds the only connection to a Telegram bot. Client
 services register their commands with the proxy instead of talking to Telegram
 themselves, and a user reaches them through explicit commands or free text.
 
+## How it works
+
+```mermaid
+flowchart TD
+    U["User (owner chat)"] -->|message| B["Telegram bot"]
+    B <-->|"long polling"| P["Proxy / router"]
+
+    subgraph Routing paths
+        P -->|"1. explicit /prefix command"| LIVE{"service live<br/>in registry?"}
+        LIVE -->|no| UNAVAIL["reply: service unavailable"]
+        LIVE -->|yes| CONFIRM{"confirm flag?"}
+        CONFIRM -->|yes| PEND["store pending:&lt;id&gt;<br/>Yes/No buttons"]
+        PEND -->|Yes| PUB
+        CONFIRM -->|no| PUB["publish cmd:&lt;service_id&gt;"]
+        P -->|"2. free text"| LLM["LLM tool call<br/>+ confidence score"]
+        LLM -->|below threshold| UNSURE["reply: not sure"]
+        LLM -->|at or above threshold| CONFIRM
+    end
+
+    subgraph Redis
+        REG["capabilities:&lt;service_id&gt;<br/>TTL 90s, heartbeat 30s"]
+        CH["channels and keys"]
+    end
+
+    PUB --> CH
+    CH -->|"subscribe cmd:&lt;service_id&gt;"| CLIENTS["Client services"]
+    REG <-->|"register and refresh"| CLIENTS
+    CLIENTS -->|"reply / unsolicited push"| CH
+    CH -->|"telegram:outgoing"| RELAY["Outgoing relay<br/>display-name prefix, rate limit"]
+    RELAY --> B
+    UNAVAIL --> B
+    UNSURE --> B
+    PEND --> B
+```
+
+The proxy is the only connection to Telegram. Client services register their
+capabilities in Redis and receive commands over pub/sub; every reply and
+unsolicited push flows back through the proxy to the single owner chat.
+
 ## Quick start
 
 Create a Telegram bot with [@BotFather](https://t.me/BotFather), run `/newbot`,
@@ -125,41 +164,3 @@ builds from the variables above.
 Adding a new client service: declare `REDIS_USER_<NAME>_PASSWORD` and, if the
 service id differs from the user name, `REDIS_USER_<NAME>_ID=<service_id>`;
 then use `redis://<name>:<password>@redis:6379/0` in its `REDIS_URL`.
-
-## Development
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest
-.venv/bin/ruff check src tests examples
-.venv/bin/python -m build
-```
-
-## Testing
-
-- `docker compose up -d` — proxy + Redis only.
-- `docker compose --profile demo up -d --build` — proxy + Redis + demo clients.
-
-## GitHub automation
-
-Recommended automation for this repository is now scaffolded under `.github/workflows/`:
-
-- `ci.yml` runs Ruff, pytest, a package build, and a Docker image build for every pull request plus pushes to `main`.
-- `dependency-review.yml` blocks risky dependency changes in pull requests using GitHub's dependency review action.
-- `codeql.yml` runs GitHub CodeQL on pull requests, pushes to `main`, and on a weekly schedule.
-
-This set covers the highest-value checks for the current codebase: Python quality, test regressions, packaging drift, container build breakage, and common security issues. Additional automation only becomes worthwhile once releases, deployments, or broader integration tests exist.
-
-## Recommended branch protection and workflow
-
-For a small Python service like this, prefer a trunk-based workflow over GitFlow:
-
-- Create short-lived feature branches from `main`.
-- Require pull requests before merging to `main`.
-- Require the `CI / Lint, test, and package`, `CI / Build container image`, `Dependency Review`, and `CodeQL` checks to pass.
-- Require at least one approving review and enable dismissal of stale approvals after new commits.
-- Require branches to be up to date before merge if you want stricter protection against hidden breakage.
-- Block force pushes and branch deletion on `main`.
-
-GitFlow is only worth the extra process if you plan to maintain multiple supported release branches at the same time. For the current repository shape, trunk-based development is simpler and gives faster feedback with less branch-management overhead.

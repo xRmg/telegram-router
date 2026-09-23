@@ -7,63 +7,109 @@ themselves, and a user reaches them through explicit commands or free text.
 ## How it works
 
 ```mermaid
-flowchart TD
-    U["User (owner chat)"] -->|message| B["Telegram bot"]
-    B <-->|"long polling"| P["Proxy / router"]
+graph TD
+    U["👤 User"] -->|message| B["🤖 Telegram Bot"]
+    B <-->|long polling| P["📡 Proxy & Router"]
 
-    subgraph Routing paths
-        P -->|"1. explicit /prefix command"| LIVE{"service live<br/>in registry?"}
-        LIVE -->|no| UNAVAIL["reply: service unavailable"]
-        LIVE -->|yes| CONFIRM{"confirm flag?"}
-        CONFIRM -->|yes| PEND["store pending:&lt;id&gt;<br/>Yes/No buttons"]
-        PEND -->|Yes| PUB
-        CONFIRM -->|no| PUB["publish cmd:&lt;service_id&gt;"]
-        P -->|"2. free text"| LLM["LLM tool call<br/>+ confidence score"]
-        LLM -->|below threshold| UNSURE["reply: not sure"]
-        LLM -->|at or above threshold| CONFIRM
+    subgraph PATHS["Message Routing"]
+        direction TD
+        
+        subgraph EXPL["Explicit Command: /prefix command"]
+            E1["Parse /prefix"] --> E2{"Service<br/>live?"}
+            E2 -->|no| E_ERR["⚠️ Unavailable"]
+            E2 -->|yes| E3{"Confirm<br/>needed?"}
+            E3 -->|yes| E_PEND["📋 Pending"]
+            E3 -->|no| E_DISP["Dispatch"]
+        end
+
+        subgraph FREE["Free Text: Intelligent Routing"]
+            F0{"LLM<br/>enabled?"}
+            F0 -->|no| F_OFF["ℹ️ Disabled"]
+            F0 -->|yes| F1{"Decision model<br/>configured?"}
+            
+            F1 -->|no| F_CHAT["🧠 LLM:<br/>select &amp; fill"]
+            
+            F1 -->|yes| F_STRAT{"ROUTING_<br/>STRATEGY?"}
+            F_STRAT -->|model| F_CHAT
+            F_STRAT -->|decision-<br/>select| F_JEV_SEL["⚡ Jev selects<br/>🧠 LLM fills params"]
+            F_STRAT -->|decision-<br/>extract| F_JEV_EXT["⚡ Jev selects &amp;<br/>fills extractable<br/>🧠 LLM fills rest"]
+            F_STRAT -->|decision-<br/>only| F_JEV_ONLY["⚡ Jev selects &amp;<br/>fills all<br/>no LLM fallback"]
+            
+            F_CHAT --> F_CONF["Confidence<br/>score"]
+            F_JEV_SEL --> F_CONF
+            F_JEV_EXT --> F_CONF
+            F_JEV_ONLY --> F_CONF
+            
+            F_CONF -->|≥ threshold| F4{"Confirm<br/>needed?"}
+            F_CONF -->|&lt; threshold| F_UNSURE["🤷 Not sure"]
+            F4 -->|yes| F_PEND["📋 Pending"]
+            F4 -->|no| F_DISP["Dispatch"]
+        end
+
+        E_ERR --> B
+        E_PEND --> B
+        E_DISP --> REDIS
+        F_OFF --> B
+        F_UNSURE --> B
+        F_PEND --> B
+        F_DISP --> REDIS
     end
 
-    subgraph Redis
-        REG["capabilities:&lt;service_id&gt;<br/>TTL 90s, heartbeat 30s"]
-        CH["channels and keys"]
+    subgraph REDIS["Redis"]
+        REG["📦 capabilities:id<br/>TTL 90s · heartbeat 30s"]
+        CH["🔌 channels &amp; keys"]
     end
 
-    PUB --> CH
-    CH -->|"subscribe cmd:&lt;service_id&gt;"| CLIENTS["Client services"]
-    REG <-->|"register and refresh"| CLIENTS
-    CLIENTS -->|"reply / unsolicited push"| CH
-    CH -->|"telegram:outgoing"| RELAY["Outgoing relay<br/>display-name prefix, rate limit"]
+    REDIS --> CH
+    CH -->|cmd:id| SVC["🔧 Services"]
+    REG <-->|register &amp; refresh| SVC
+    SVC -->|reply/push| CH
+    CH -->|telegram:outgoing| RELAY["📤 Relay<br/>prefix · rate limit"]
     RELAY --> B
-    UNAVAIL --> B
-    UNSURE --> B
-    PEND --> B
 ```
 
 ### Topology
 
 ```mermaid
-flowchart TB
-    subgraph TG["Telegram cloud"]
+graph TB
+    subgraph CLOUD["☁️ Telegram Cloud"]
         API["Telegram Bot API"]
     end
 
-    API <-->|"HTTPS long polling"| PROXY["Proxy / router"]
+    API <-->|HTTPS<br/>long polling| PROXY["🔀 Proxy &amp; Router"]
 
-    subgraph STACK["Docker compose stack"]
+    subgraph STACK["🐳 Docker Compose Stack"]
+        direction TB
+        
         PROXY
-        REDIS[(Redis)]
-        LLM["LLM provider (optional)"] -.->|"OpenAI-compatible API"| PROXY
-
-        PROXY <-->|"capabilities, commands, replies"| REDIS
-
-        subgraph SERVICES["Client services"]
-            TIME["time-service<br/>cmd:time"]
-            HA["home-automation<br/>cmd:home-automation"]
-            MORE["more services<br/>cmd:&lt;service_id&gt;"]
+        
+        subgraph STORAGE["Data Layer"]
+            REDIS["🗄️ Redis<br/>(capabilities,<br/>channels, replies)"]
         end
-
-        REDIS <--> SERVICES
+        
+        subgraph MODELS["🧠 AI Layer"]
+            LLM["LLM Provider<br/>(OpenAI-compatible)<br/>optional"]
+            DECISIONS["⚡ Decisions API<br/>(Jev structured model)<br/>optional<br/>OpenRouter"]
+        end
+        
+        PROXY <-->|Redis protocol| REDIS
+        PROXY -->|tool calls| LLM
+        PROXY -->|choice/score<br/>questions| DECISIONS
+        
+        subgraph SERVICES["🔧 Client Services"]
+            direction LR
+            TIME["⏰ time-service<br/>cmd:time"]
+            HA["🏠 home-automation<br/>cmd:ha"]
+            MORE["📦 more services<br/>cmd:*"]
+        end
+        
+        REDIS <-->|capabilities<br/>commands<br/>replies| SERVICES
     end
+    
+    style CLOUD fill:#e1f5ff
+    style STACK fill:#f1f8e9
+    style MODELS fill:#fff3e0
+    style STORAGE fill:#fce4ec
 ```
 
 The proxy is the only service that talks to Telegram; every client service
@@ -74,43 +120,81 @@ reaches the user exclusively through Redis and the proxy.
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant T as Telegram bot
+    participant T as Telegram
     participant P as Proxy
     participant R as Redis
-    participant S as Client service
+    participant D as Jev<br/>Decisions API
+    participant L as LLM
+    participant S as Service
 
-    Note over S: startup
-    S->>R: SET capabilities:&lt;id&gt; (TTL 90s)
-    S->>R: PUBLISH capabilities:changed
+    Note over S: 📦 Startup & heartbeat
+    S->>R: SET capabilities:id (TTL 90s)
     loop every 30s
-        S->>R: heartbeat: refresh capability key
+        S->>R: refresh capability key
     end
 
+    rect rgb(220, 240, 255)
+    Note over U,S: 🎯 Explicit command path: /time now
+    end
     U->>T: /time now
-    T->>P: message via long polling
-    P->>R: service live? (capabilities:&lt;id&gt;)
-    R-->>P: yes
-    P->>R: PUBLISH cmd:&lt;id&gt; {request_id, command, params}
-    R-->>S: deliver command
+    T->>P: message
+    P->>R: capabilities:time live?
+    R-->>P: ✓ yes
+    P->>R: PUBLISH cmd:time {request_id, params}
+    R-->>S: deliver
     S->>R: PUBLISH telegram:outgoing {reply}
-    R-->>P: deliver reply
-    P->>T: send reply (prefixed, owner chat)
-    T-->>U: Time: 2026-09-21 10:00:00
+    R-->>P: reply received
+    P->>T: send reply (prefixed)
+    T-->>U: ✓ Time: 2026-09-21 10:00:00
 
-    U->>T: "turn on the lights" (free text)
-    T->>P: message via long polling
-    P->>P: LLM tool call + confidence
-    alt confidence >= threshold
-        P->>R: check live, then PUBLISH cmd:&lt;id&gt;
-    else below threshold
-        P->>T: "not sure what you mean"
+    rect rgb(240, 220, 255)
+    Note over U,S: 🧠 Free text routing (no Jev)
     end
+    U->>T: "turn on lights"
+    T->>P: message
+    P->>L: select capability + params
+    L-->>P: home-automation.lights_on {room=kitchen}
+    P->>R: check live + PUBLISH
+    R-->>S: deliver
+    S->>R: reply
+    R-->>P: received
+    P->>T: reply
+    T-->>U: ✓ Lights on
 
-    Note over S: unsolicited push
-    S->>R: PUBLISH telegram:outgoing (no request_id, level)
-    R-->>P: deliver push
-    P->>T: send push (rate-limited per service)
-    T-->>U: Sniper: order filled
+    rect rgb(255, 220, 220)
+    Note over U,S: ⚡ Free text routing (with Jev)
+    end
+    U->>T: "turn on the kitchen lights"
+    T->>P: message
+    par Jev Stage
+        P->>D: which capability?
+        D-->>P: home-automation (conf: 0.95)
+    end
+    alt decision-select
+        par Parameter filling
+            P->>L: extract room parameter
+            L-->>P: room=kitchen
+        end
+    else decision-extract or decision-only
+        par Parameter extraction
+            P->>D: extract room parameter
+            D-->>P: room=kitchen (conf: 0.89)
+        end
+    end
+    P->>R: check live + PUBLISH
+    R-->>S: deliver
+    S->>R: reply
+    R-->>P: received
+    P->>T: reply (models + cost logged)
+    T-->>U: ✓ Lights on in kitchen
+
+    rect rgb(255, 240, 220)
+    Note over S: 📬 Unsolicited push
+    end
+    S->>R: PUBLISH telegram:outgoing {text, level}
+    R-->>P: received
+    P->>T: send push (rate-limited)
+    T-->>U: 📬 Sniper: order filled
 ```
 
 ## Quick start

@@ -56,6 +56,26 @@ async def test_capability_payload_shape(redis):
     }
 
 
+async def test_capability_payload_emits_enum_and_extract(redis):
+    client = make_client(redis)
+
+    @client.command(
+        "lights_on",
+        parameters={
+            "room": Parameter(type="string", required=True, enum=["kitchen", "attic"]),
+            "note": Parameter(type="string", extract="span"),
+        },
+    )
+    async def lights_on(parameters):
+        return "ok"
+
+    parameters = client.capability_payload()["commands"][0]["parameters"]
+    assert parameters["room"]["enum"] == ["kitchen", "attic"]
+    assert "extract" not in parameters["room"]
+    assert parameters["note"]["extract"] == "span"
+    assert "enum" not in parameters["note"]
+
+
 async def test_capability_payload_includes_help(redis):
     client = make_client(redis, help="Some help")
     assert client.capability_payload()["help"] == "Some help"

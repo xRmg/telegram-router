@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .config import RESERVED_PREFIXES, SCHEMA_VERSION
 
 ParameterType = Literal["string", "number", "boolean"]
+ExtractMode = Literal["model", "span"]
 _PREFIX_PATTERN = re.compile(r"[a-z0-9_-]+")
 
 
@@ -15,6 +16,23 @@ class ParameterSpec(BaseModel):
     type: ParameterType = "string"
     description: str = ""
     required: bool = False
+    enum: list[str] | None = None
+    extract: ExtractMode = "model"
+
+    @field_validator("enum")
+    @classmethod
+    def _validate_enum(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        if not value:
+            raise ValueError("enum must not be empty")
+        if len(value) != len({item.casefold() for item in value}):
+            raise ValueError("enum values must be unique")
+        return value
+
+    @property
+    def decision_extractable(self) -> bool:
+        return self.enum is not None or self.extract == "span"
 
 
 class CommandSpec(BaseModel):
@@ -31,6 +49,10 @@ class CommandSpec(BaseModel):
         if not value.strip():
             raise ValueError("command name must not be empty")
         return value
+
+    @property
+    def decision_routable(self) -> bool:
+        return all(spec.decision_extractable for spec in self.parameters.values())
 
 
 class Capability(BaseModel):

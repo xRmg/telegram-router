@@ -20,7 +20,7 @@ from aiogram.types import (
 
 from .commands import parse_explicit
 from .config import RESERVED_PREFIXES, Config
-from .help_text import build_general_help, build_service_help
+from .help_text import build_configuration_text, build_general_help, build_service_help
 from .keys import LAST_UPDATE_ID_KEY, OWNER_CHAT_ID_KEY
 from .registry import CapabilityRegistry, resolve_display_name
 from .router import Router
@@ -166,6 +166,10 @@ class ProxyBot:
         if explicit is not None and explicit.prefix in RESERVED_PREFIXES:
             if explicit.prefix == "help":
                 await self._notifier.send(self._help_text(explicit.rest))
+            elif explicit.prefix == "configured":
+                await self._notifier.send(
+                    build_configuration_text(self._config, self._registry)
+                )
             else:
                 await self._notifier.send(self._capabilities_text())
             return

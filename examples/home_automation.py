@@ -20,6 +20,8 @@ client = ServiceClient(
     ),
 )
 
+ROOMS = ["living room", "kitchen", "bedroom", "bathroom", "garage", "attic"]
+
 lights: dict[str, bool] = {}
 
 
@@ -28,7 +30,11 @@ lights: dict[str, bool] = {}
     description="Turn on the lights in a room",
     examples=["turn on the lights in the living room", "lights on in the kitchen"],
     usage="lights_on room=living room",
-    parameters={"room": Parameter(type="string", description="Room name", required=True)},
+    parameters={
+        "room": Parameter(
+            type="string", description="Room name", required=True, enum=ROOMS
+        )
+    },
 )
 async def lights_on(parameters: dict[str, str]) -> str:
     room = parameters["room"]
@@ -41,7 +47,11 @@ async def lights_on(parameters: dict[str, str]) -> str:
     description="Turn off the lights in a room",
     examples=["turn off the lights"],
     usage="lights_off room=living room",
-    parameters={"room": Parameter(type="string", description="Room name", required=True)},
+    parameters={
+        "room": Parameter(
+            type="string", description="Room name", required=True, enum=ROOMS
+        )
+    },
 )
 async def lights_off(parameters: dict[str, str]) -> str:
     room = parameters["room"]

@@ -11,7 +11,7 @@ from .commands import CommandParseError, ExplicitCommand, parse_command, parse_e
 from .config import PENDING_CONFIRMATION_TTL_SECONDS, Config
 from .help_text import build_service_help
 from .keys import LLM_RATE_LIMIT_KEY, command_channel, pending_key
-from .llm import ToolRouter
+from .llm import RouteOutcome, ToolRouter
 from .models import CommandMessage, OutgoingMessage
 from .notifier import Notifier
 from .ratelimit import FixedWindowLimiter
@@ -23,6 +23,10 @@ UNSURE_MESSAGE = (
 LLM_BUSY_MESSAGE = "Too many requests right now — try again in a minute."
 NO_SERVICES_MESSAGE = "No services with commands are registered yet."
 LLM_DISABLED_MESSAGE = "Free-text routing is not configured yet. Use /<prefix> <command> instead."
+EXTRACTION_UNAVAILABLE_MESSAGE = (
+    "I know which service that is, but I can't read the details out of free text. "
+    "Use /<prefix> <command> key=value — /help shows the exact form."
+)
 
 
 @dataclass
@@ -32,6 +36,28 @@ class _PendingReply:
     confidence: float | None
     origin: str
     timeout_task: asyncio.Task[None]
+
+
+def _verbose_trace(outcome: RouteOutcome) -> str:
+    if not outcome.steps:
+        return "Routing trace: no model calls."
+    lines = ["Routing trace:"]
+    for step in outcome.steps:
+        cost = f" · ${step.cost:.6f}" if step.cost is not None else ""
+        lines.append(f"  {step.stage}: {step.model} ({step.seconds:.2f}s{cost})")
+    total = f"  total {outcome.seconds:.2f}s"
+    if outcome.cost is not None:
+        total += f" · ${outcome.cost:.6f}"
+    lines.append(total)
+    decision = outcome.decision
+    if decision is None:
+        lines.append(f"  -> no match ({outcome.error or 'none'})")
+    else:
+        lines.append(
+            f"  -> {decision.tool_name} {decision.parameters} "
+            f"(confidence {decision.confidence:.2f})"
+        )
+    return "\n".join(lines)
 
 
 def new_request_id() -> str:
@@ -163,7 +189,7 @@ class Router:
             self._log(new_request_id(), None, None, None, "llm", "llm_rate_limited")
             await self._notifier.send(LLM_BUSY_MESSAGE)
             return
-        sensitive = {"sensitive_user_message": text}
+        sensitive: dict[str, object] = {"sensitive_user_message": text}
         try:
             outcome = await self._llm.route(text)
         except Exception as exc:
@@ -173,6 +199,12 @@ class Router:
             return
         if outcome.raw_response:
             sensitive["sensitive_llm_response"] = outcome.raw_response
+        if outcome.steps:
+            sensitive["models"] = [f"{step.stage}={step.model}" for step in outcome.steps]
+            sensitive["cost_usd"] = outcome.cost
+            sensitive["routing_seconds"] = round(outcome.seconds, 3)
+        if self._config.routing_verbose:
+            await self._notifier.send(_verbose_trace(outcome))
         decision = outcome.decision
         if decision is None:
             self._log(
@@ -184,7 +216,10 @@ class Router:
                 outcome.error or "no_match",
                 sensitive,
             )
-            await self._notifier.send(UNSURE_MESSAGE)
+            if outcome.error == "extraction_unavailable":
+                await self._notifier.send(EXTRACTION_UNAVAILABLE_MESSAGE)
+            else:
+                await self._notifier.send(UNSURE_MESSAGE)
             return
         if decision.confidence < self._config.routing_confidence_threshold:
             self._log(

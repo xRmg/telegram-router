@@ -142,6 +142,43 @@ docker compose up -d proxy
 until an OpenAI-compatible key is provided (`LLM_BASE_URL`/`LLM_MODEL` can point
 at any OpenAI-compatible endpoint).
 
+Optionally set `STRUCTURED_DECISION_MODEL` to a structured decision model on
+OpenRouter's Decisions API (e.g. `typesafe/jev-1.13`) to speed up capability
+selection: the router asks that model which capability fits first, and only
+calls `LLM_MODEL` afterwards to extract parameters when one is picked. A
+clear non-match skips the `LLM_MODEL` call entirely. Leave it unset to route
+with `LLM_MODEL` alone.
+
+`ROUTING_STRATEGY` picks how much of the work the decision model does:
+
+| Strategy | Selects capability | Fills parameters | Calls `LLM_MODEL` |
+|---|---|---|---|
+| `model` (default) | `LLM_MODEL` | `LLM_MODEL` | always |
+| `decision-select` | decision model | `LLM_MODEL` | on a match |
+| `decision-extract` | decision model | decision model where it can | for the rest |
+| `decision-only` | decision model | decision model | never |
+
+The three `decision-*` values require `STRUCTURED_DECISION_MODEL` and are
+rejected at startup without it.
+
+A command's parameters can be filled by the decision model only when *every*
+one is declared with `enum=[...]` (it picks a canonical value) or
+`extract="span"` (it picks a literal span from the message). Any command with
+a parameter that needs transforming — a date to normalise, a number to parse —
+falls to `LLM_MODEL`, as does any extraction reported below
+`STRUCTURED_DECISION_MIN_CONFIDENCE`. Under `decision-only` there is no
+fallback, so those commands reply asking for the explicit `/<prefix> <command>`
+form instead.
+
+Prefer `enum` where the value set is known: the returned value is canonical,
+so a service never receives `"the Big Apple"` when it expects `"New York"`.
+
+Set `ROUTING_VERBOSE=true` to have the bot reply to every free-text message
+with the models, timings and cost it used. The same data is written to the
+structured log on every routed message regardless (`models`, `cost_usd`,
+`routing_seconds`), so `docker compose logs proxy` answers it without the
+chat noise.
+
 ## Usage
 
 | Message | Effect |
@@ -149,6 +186,7 @@ at any OpenAI-compatible endpoint).
 | `/help` | Router usage and list of services |
 | `/help <service>` | One service's help text |
 | `/capabilities` | Every registered capability in detail |
+| `/configured` | Which models are configured, and which model routes each command |
 | `/ha lights_on room=living room` | Explicit command (parameters as `key=value`) |
 | `/time` | Runs the service's only command |
 | plain text | LLM-routed free text (needs `LLM_API_KEY`) |

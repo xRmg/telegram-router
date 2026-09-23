@@ -32,12 +32,27 @@ class Parameter:
     type: str = "string"
     description: str = ""
     required: bool = False
+    enum: list[str] | None = None
+    extract: str = "model"
 
 
 @dataclass
 class _RegisteredCommand:
     spec: dict[str, Any]
     handler: Handler
+
+
+def _parameter_spec(param: Parameter) -> dict[str, Any]:
+    spec: dict[str, Any] = {
+        "type": param.type,
+        "description": param.description,
+        "required": param.required,
+    }
+    if param.enum is not None:
+        spec["enum"] = list(param.enum)
+    if param.extract != "model":
+        spec["extract"] = param.extract
+    return spec
 
 
 class ServiceClient:
@@ -89,11 +104,7 @@ class ServiceClient:
                 "usage": usage,
                 "confirm": confirm,
                 "parameters": {
-                    param_name: {
-                        "type": param.type,
-                        "description": param.description,
-                        "required": param.required,
-                    }
+                    param_name: _parameter_spec(param)
                     for param_name, param in (parameters or {}).items()
                 },
             }

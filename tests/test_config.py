@@ -10,6 +10,11 @@ def test_defaults():
     assert config.redis_url == "redis://redis:6379/0"
     assert config.llm_base_url == "https://openrouter.ai/api/v1"
     assert config.llm_model == "openrouter/auto"
+    assert config.structured_decision_model == ""
+    assert config.routing_strategy == "model"
+    assert not config.structured_decision_enabled
+    assert not config.decision_extraction_enabled
+    assert config.chat_model_enabled
     assert config.routing_confidence_threshold == 0.6
     assert config.reply_timeout_seconds == 10.0
     assert config.llm_rate_limit_per_minute == 20
@@ -22,6 +27,8 @@ def test_overrides():
         **BASE,
         "REDIS_URL": "redis://localhost:6390/2",
         "LLM_MODEL": "some-model",
+        "STRUCTURED_DECISION_MODEL": "typesafe/jev-1.13",
+        "ROUTING_STRATEGY": "decision-extract",
         "ROUTING_CONFIDENCE_THRESHOLD": "0.8",
         "REPLY_TIMEOUT_SECONDS": "5",
         "LLM_RATE_LIMIT_PER_MINUTE": "3",
@@ -30,6 +37,11 @@ def test_overrides():
     config = Config.from_env(env)
     assert config.redis_url == "redis://localhost:6390/2"
     assert config.llm_model == "some-model"
+    assert config.structured_decision_model == "typesafe/jev-1.13"
+    assert config.routing_strategy == "decision-extract"
+    assert config.structured_decision_enabled
+    assert config.decision_extraction_enabled
+    assert config.chat_model_enabled
     assert config.routing_confidence_threshold == 0.8
     assert config.reply_timeout_seconds == 5.0
     assert config.llm_rate_limit_per_minute == 3
@@ -76,6 +88,37 @@ def test_missing_llm_key_allowed():
 
 def test_llm_enabled_with_key():
     assert Config.from_env(BASE).llm_enabled
+
+
+def test_structured_decision_requires_api_key():
+    config = Config.from_env(
+        {
+            "TELEGRAM_BOT_TOKEN": "t",
+            "TELEGRAM_OWNER_CHAT_ID": "42",
+            "STRUCTURED_DECISION_MODEL": "typesafe/jev-1.13",
+            "ROUTING_STRATEGY": "decision-select",
+        }
+    )
+    assert not config.structured_decision_enabled
+
+
+def test_decision_only_disables_chat_model():
+    config = Config.from_env(
+        {
+            **BASE,
+            "STRUCTURED_DECISION_MODEL": "typesafe/jev-1.13",
+            "ROUTING_STRATEGY": "decision-only",
+        }
+    )
+    assert config.structured_decision_enabled
+    assert config.decision_extraction_enabled
+    assert not config.chat_model_enabled
+
+
+def test_decision_model_unused_under_model_strategy():
+    config = Config.from_env({**BASE, "STRUCTURED_DECISION_MODEL": "typesafe/jev-1.13"})
+    assert config.structured_decision_model == "typesafe/jev-1.13"
+    assert not config.structured_decision_enabled
 
 
 def test_bad_threshold_raises():
